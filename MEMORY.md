@@ -66,6 +66,70 @@
 - Always run `prisma db push` after adding new columns/enums to schema
 - Prisma 7 with `@prisma/adapter-pg` — no `datasources` in PrismaClient constructor
 
+## Dispatcher-Grade Redesign (March 2026)
+- **Phase 1: Dense Theme** — 3 density modes (Dense/Standard/Comfortable)
+  - CSS variables in `globals.css` under `[data-density="dense"]` selectors
+  - `useDensity` hook at `src/hooks/use-density.ts`, persists to `tms:theme-density`
+  - `DensityToggle` dropdown at `src/components/layout/density-toggle.tsx`
+  - Inline script in `src/app/layout.tsx` applies density BEFORE React hydrates (no flash)
+  - Dense: 30px rows, 8px padding, 11-12px fonts
+- **Phase 2: Saved Views** — DB-backed saved views per table
+  - `SavedView` Prisma model: name, tableKey, userId, isShared, isDefault, config (JSON)
+  - `SavedViewsDropdown` at `src/components/tables/saved-views-dropdown.tsx`
+  - `SavedViewsWrapper` at `src/components/tables/saved-views-wrapper.tsx` (SSR-safe lazy loader)
+  - Integrated on: Team Dispatch All Orders (per-team keys), Trips page
+  - Orders page blocked by SSR TDZ issue — needs hook tree refactor
+  - `useAuth` removed from SavedViewsDropdown, uses localStorage Supabase session instead
+- **Phase 3: Enterprise Table Features**
+  - Column pinning: `ColumnPinningState` in DataTable, sticky positioning
+  - `getRowClassName` prop: conditional row highlighting per data
+  - Team Dispatch row colors: HOLD=red, overdue=red, today=amber, tomorrow=yellow
+  - Column visibility persists to localStorage: `table-cols-{tableKey}`
+- **Phase 4: Resizable Side Panel**
+  - `panel-shell.tsx` — drag-to-resize left edge, min 400px, max 85vw
+  - Maximize/Restore toggle button
+  - Width persists to `tms:panel-width` in localStorage
+- **Phase 5: Dashboard Command Center**
+  - Quick Actions bar: New Order, Team Dispatch, Trip Planner, Communications
+  - Urgency Alerts: unassigned orders (amber), on hold (red), available drivers/trucks (green/blue)
+  - All alerts clickable → navigate to relevant page
+
+## HIGHWAY_US Team — Business Rules (Critical)
+- **Active Board**: Uses Zoho-style business rules, NOT `dispatchTeam` column
+  - direction ≠ LOCAL (OR direction IS NULL)
+  - customer NOT contains PENSKE, CANADIAN TIRE, RYDER
+  - Status active + date window (5 days past to 30 days ahead)
+- **All Orders**: Same business rules, no date window, default Active status filter
+- **Report Config defaults**: Shows 4 filters for visibility, but NOT sent to API (backend handles filtering). Only user-modified filters (isDirty) are sent.
+- **Double-filter bug**: If Report Config defaults are sent to API alongside backend rules, `NOT` clauses conflict and reduce results. Fixed by checking `isDirty`.
+
+## Zoho Direction Mapping
+- `IN_OUT_fx` (formula field, always updated) preferred over `Out_In_dd` (manual dropdown, often empty)
+- mapDirection handles: "IN"→IN_BOUND, "OUT"→OUT_BOUND, "In Bound"→IN_BOUND, "Local"→LOCAL, "USA"→USA
+- Case-insensitive normalization via `.trim().toUpperCase()`
+- 85 orders had NULL direction from missing Zoho field — backfilled, Highway filter includes NULL
+
+## Sidebar Customization
+- Cross-group page moves: `pageMoves` in `use-sidebar-preferences.ts` (restored after PR#50 removed it)
+- `batchMovePageToGroup()`: atomic update of pageMoves + source/target pageOrder
+- Drop on group header: accepts page drops for cross-group moves (not just module drops)
+- Double-fire guard: `dropProcessedRef` prevents duplicate drop handler execution
+- Favorites: only pinned items shown (not auto-favorites), `excluded` list prevents re-appearance after unpin
+
+## Communications Hub — Per-Inbox Tabs
+- 5 tabs: All, Dispatch (blue), Cantire (green), Penske (orange), Lactalis (purple)
+- Per-tab colors with activeBg + border matching inbox color
+- `inboxEmail` field on EmailThread for filtering
+- Compose auto-selects From address based on active tab
+
+## Report Config Filters
+- `buildPrismaFilters()` in dispatch board API converts filter JSON to Prisma where clauses
+- Supports: equals, notEquals, contains, notContains, startsWith, in, notIn, isNull, isNotNull
+- Handles camelCase operators (from FilterCondition type) and snake_case
+- Date filters: before/after/between with Date object conversion
+- Nested fields: customer.companyName, trip.driver, trip.truck
+- AND/OR group logic support
+
 ## Trip Activities & Mileage
 - See [trip_activities_mileage.md](trip_activities_mileage.md) for details
 - 3 mileage sources: Google (planned), PC Miler (billing), Samsara (actual GPS)
